@@ -28,8 +28,6 @@ def update():
 
 @app.route("/get", methods=["GET"])
 def get_last():
-    if not authorized():
-        return "lol no", 401
     return jsonify(state)
 
 @app.route("/keepalive", methods=["GET"])
