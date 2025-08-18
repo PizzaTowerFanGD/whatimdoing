@@ -1,12 +1,14 @@
+ 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import hashlib
 import os
 
 app = Flask(__name__)
+CORS(app)  # enable CORS for all routes
 
-# pre-hash your chosen passcode with sha256 and drop the hex string here
+# pre-hash your chosen passcode with sha256
 KNOWN_HASH = "081390df21e1d49e0af02bf37ff289e7385450db0fadbf7dd937720027759d68"
-
 state = {"last_app": None}
 
 def authorized():
@@ -32,9 +34,11 @@ def get_last():
 
 @app.route("/keepalive", methods=["GET"])
 def keepalive():
-    if not authorized():
-        return "lol no", 401
-    return "ok", 200
+    if authorized():
+        return "ok", 200
+    else:
+        # still 200 so render stays awake, but make it obvious
+        return "unauthorized (but still alive)", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
