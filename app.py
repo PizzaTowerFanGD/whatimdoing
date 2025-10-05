@@ -3,7 +3,7 @@ from flask_cors import CORS
 from google import genai
 import hashlib
 import os
-
+import requests
 app = Flask(__name__)
 CORS(app)
 
@@ -53,7 +53,11 @@ def update():
         return "missing app name", 400
     state["last_app"] = app_name
     return "updated", 200
-
+    
+@app.route('/proxy')
+def get_cors_proxy():
+    return requests.get(request.args.get("url")).content
+    
 @app.route("/get", methods=["GET"])
 def get_last():
     return jsonify(state)
