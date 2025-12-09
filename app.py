@@ -1,9 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from google import genai
 import hashlib
 import os
 import requests
+import mimetypes
+
 app = Flask(__name__)
 CORS(app)
 
@@ -22,6 +24,38 @@ def authorized():
     supplied = request.headers.get("Authorization", "")
     hashed = hashlib.sha256(supplied.encode()).hexdigest()
     return hashed == KNOWN_HASH
+
+# --- NEW GITHUB PROXY ---
+@app.route("/github/<user>/<repo>/<branch>/", defaults={'filepath': 'index.html'})
+@app.route("/github/<user>/<repo>/<branch>/<path:filepath>")
+def github_proxy(user, repo, branch, filepath):
+    # Construct the raw GitHub URL
+    raw_url = f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{filepath}"
+    
+    try:
+        resp = requests.get(raw_url)
+        
+        if resp.status_code != 200:
+            return f"GitHub Error: {resp.status_code} - {resp.text}", resp.status_code
+
+        # Determine the correct MIME type
+        # GitHub serves raw files as text/plain, which breaks CSS/JS in browsers.
+        # We must detect the type from the extension and force the header.
+        content_type, encoding = mimetypes.guess_type(filepath)
+        
+        # Explicit fallbacks for common web types if mimetypes guesses wrong or returns None
+        if not content_type:
+            if filepath.endswith(".html"): content_type = "text/html"
+            elif filepath.endswith(".css"): content_type = "text/css"
+            elif filepath.endswith(".js"): content_type = "application/javascript"
+            elif filepath.endswith(".json"): content_type = "application/json"
+            else: content_type = "text/plain"
+
+        return Response(resp.content, mimetype=content_type, status=200)
+
+    except Exception as e:
+        return f"Proxy Error: {str(e)}", 500
+# ------------------------
 
 # GEMINI PROXY
 @app.route("/gemini", methods=["POST"])
