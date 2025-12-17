@@ -103,55 +103,27 @@ def keepalive():
     else:
         return "unauthorized (but still alive)", 200
 
-import io
-import gzip
-import zlib
-
-import brotli
-
-# --- ROBUST GENERIC SUBPAGE PROXY ---
+# --- SUBPAGE PROXY BASED ON /proxy LOGIC ---
 @app.route("/p/<host>/", defaults={"path": ""}, methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"])
 @app.route("/p/<host>/<path:path>", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"])
 def subpage_proxy(host, path):
-    target_url = f"https://{host}/{path}"
-
-    # copy headers except ones that break things
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ["host", "content-length"]}
+    url = f"https://{host}/{path}"
 
     try:
         resp = requests.request(
             method=request.method,
-            url=target_url,
-            headers=headers,
+            url=url,
+            headers={k: v for k, v in request.headers.items() if k.lower() != "host"},
             params=request.args,
             data=request.get_data(),
             cookies=request.cookies,
-            allow_redirects=True  # follow redirects
+            allow_redirects=True
         )
 
-        excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+        excluded = {"content-length", "transfer-encoding", "connection"}
         response_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
 
-        content_type = resp.headers.get("Content-Type", "")
-        content = resp.content
-
-        # handle compression
-        ce = resp.headers.get("Content-Encoding", "").lower()
-        if ce == "gzip":
-            content = gzip.decompress(content)
-        elif ce == "deflate":
-            content = zlib.decompress(content)
-        elif ce == "br":
-            content = brotli.decompress(content)
-
-        # return text for text-based content
-        if "text" in content_type or "json" in content_type or "javascript" in content_type:
-            try:
-                content = content.decode(resp.encoding or "utf-8")
-            except:
-                pass  # fallback to bytes if decoding fails
-
-        return Response(content, status=resp.status_code, headers=response_headers)
+        return Response(resp.content, status=resp.status_code, headers=response_headers)
 
     except Exception as e:
         return f"proxy error: {str(e)}", 500
