@@ -103,6 +103,46 @@ def keepalive():
     else:
         return "unauthorized (but still alive)", 200
 
+# --- GENERIC SUBPAGE PROXY ---
+@app.route("/p/<host>/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.route("/p/<host>/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+def subpage_proxy(host, path):
+    target_url = f"https://{host}/{path}"
+
+    # copy headers except ones that will break things
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ["host", "content-length"]
+    }
+
+    try:
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            params=request.args,
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            stream=True,
+        )
+
+        excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+        response_headers = [
+            (k, v) for k, v in resp.headers.items()
+            if k.lower() not in excluded
+        ]
+
+        return Response(
+            resp.content,
+            status=resp.status_code,
+            headers=response_headers,
+        )
+
+    except Exception as e:
+        return f"proxy error: {str(e)}", 500
+# ----------------------------
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
