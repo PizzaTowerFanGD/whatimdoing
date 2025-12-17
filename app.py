@@ -103,17 +103,17 @@ def keepalive():
     else:
         return "unauthorized (but still alive)", 200
 
-# --- GENERIC SUBPAGE PROXY ---
-@app.route("/p/<host>/", defaults={"path": ""}, methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
-@app.route("/p/<host>/<path:path>", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+import io
+import gzip
+import zlib
+
+# --- IMPROVED GENERIC SUBPAGE PROXY ---
+@app.route("/p/<host>/", defaults={"path": ""}, methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"])
+@app.route("/p/<host>/<path:path>", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS","HEAD"])
 def subpage_proxy(host, path):
     target_url = f"https://{host}/{path}"
 
-    # copy headers except ones that will break things
-    headers = {
-        k: v for k, v in request.headers.items()
-        if k.lower() not in ["host", "content-length"]
-    }
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ["host", "content-length"]}
 
     try:
         resp = requests.request(
@@ -124,20 +124,22 @@ def subpage_proxy(host, path):
             data=request.get_data(),
             cookies=request.cookies,
             allow_redirects=False,
-            stream=True,
         )
 
         excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
-        response_headers = [
-            (k, v) for k, v in resp.headers.items()
-            if k.lower() not in excluded
-        ]
+        response_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
 
-        return Response(
-            resp.content,
-            status=resp.status_code,
-            headers=response_headers,
-        )
+        content_type = resp.headers.get("Content-Type", "")
+        content = resp.content
+
+        # decompress if text-based
+        if "text" in content_type or "json" in content_type or "javascript" in content_type:
+            if resp.headers.get("Content-Encoding") == "gzip":
+                content = gzip.decompress(content)
+            elif resp.headers.get("Content-Encoding") == "deflate":
+                content = zlib.decompress(content)
+
+        return Response(content, status=resp.status_code, headers=response_headers)
 
     except Exception as e:
         return f"proxy error: {str(e)}", 500
